@@ -8,9 +8,14 @@
 # hooks — it arrives as a UserPromptExpansion event carrying command_name. We
 # match on command_name first and keep the literal-prompt regex as a fallback.
 #
-# Exit 2 + the stderr line surface the operator-visible confirmation and ask CC
-# to drop the expanded prompt; deets.md also carries an empty body +
-# `disable-model-invocation: true`, so no model turn fires regardless.
+# Exit 0 (NOT 2): this is a pure side-effect. deets.md carries an empty body +
+# `disable-model-invocation: true`, so exit 0 lets the expansion proceed to an
+# empty prompt that fires no model turn. We deliberately do NOT exit 2 — a
+# non-zero UserPromptExpansion exit makes Claude Code show "UserPromptExpansion
+# operation blocked by hook: <stderr>", which reads as an error to the user. On
+# an exit-0 hook the stderr line below lands in the debug log, not the
+# transcript, so the toggle is silent — the statusline flipping to/from the
+# two-line layout is the real confirmation.
 #
 # Sentinel is GLOBAL (not per-session) so a flip from any window affects all of
 # them on next render, and the state survives across new windows.
@@ -34,6 +39,6 @@ if ($cmd -eq 'deets' -or $prompt -match '^/deets\s*$') {
         New-Item -ItemType File -Path $flag -Force | Out-Null
         [Console]::Error.WriteLine("deets mode ON")
     }
-    exit 2
+    exit 0
 }
 exit 0
