@@ -1,0 +1,31 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ~/.claude/statusline.ps1"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ~/.claude/hooks/stop-classify-awaiting.ps1" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ~/.claude/hooks/user-prompt-clear-awaiting.ps1" },
+          { "type": "command", "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ~/.claude/hooks/user-prompt-toggle-clock.ps1" }
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "matcher": "deets",
+        "hooks": [
+          { "type": "command", "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ~/.claude/hooks/user-prompt-toggle-deets.ps1" }
+        ]
+      }
+    ]
+  }
+}
