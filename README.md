@@ -7,9 +7,7 @@ A rich, self-contained statusline for [Claude Code](https://claude.com/claude-co
 on **Windows / PowerShell**. One line by default; `/deets` flips a verbose
 two-line layout.
 
-```
-● Opus 4.8 @14:32 ◐ high | myrepo@main (+42 -7) | 128k/200k | 5h 34% @15:00
-```
+![claude-code-statusline preview. Default one line: a green bullet, model "Opus 4.8", received-time "@14:32", effort "◐ high", "myrepo@main (+42 -7)", "128k/200k", "5h 34% @15:00", "7d 8% @Mon 15:00". And the /deets two-line layout: line 1 leads with the state word "ready" then the received-time, effort and repo; line 2 has the model, tokens, and both rate-limit clocks.](preview.svg)
 
 ## What it shows
 
@@ -43,17 +41,40 @@ that only read the hook JSON Claude Code hands them and touch flag files under
 the statusline alone and skip the hooks; you just lose those interactive states
 (the line still renders everything else).
 
+**On disk** everything stays under your Claude config dir (`~/.claude`, or
+`$CLAUDE_CONFIG_DIR`): the statusline and hooks write small flag files under
+`state/`, and the statusline reads your existing Claude Code OAuth token from
+`credentials.json` to make that one usage call — it never creates or stores a new
+credential. Nothing is read or written anywhere else, and nothing is sent
+off-box except that single call to Anthropic.
+
 ## Install
 
-See **[INSTALL_GUIDE.md](INSTALL_GUIDE.md)** — it's written so you can hand it to
-Claude Code and say *"follow this."* Or do it by hand: copy `statusline.ps1`,
-`hooks/`, and `commands/` into `~/.claude/`, then merge `settings.example.json`
-into `~/.claude/settings.json`.
+**1. Get the code:**
+
+```powershell
+git clone https://github.com/godspede/claude-code-statusline
+cd claude-code-statusline
+```
+
+**2. Install from inside that folder**, either way:
+
+- **Let Claude Code do it** — open Claude Code *in the cloned folder* and say
+  *"follow INSTALL_GUIDE.md"*. It must run from the repo root so it can find the
+  files to copy.
+- **By hand** — copy `statusline.ps1`, `hooks/`, and `commands/` into `~/.claude/`,
+  then merge the `statusLine` + `hooks` blocks from `settings.example.json` into
+  `~/.claude/settings.json`.
+
+> `settings.example.json` is **illustrative** (tilde paths, `pwsh`). The
+> [INSTALL_GUIDE.md](INSTALL_GUIDE.md) merge is the supported path: it backs up
+> your settings, writes absolute quoted paths, auto-selects `pwsh` or Windows
+> PowerShell 5.1, and honors `CLAUDE_CONFIG_DIR`.
 
 ## Requirements
 
 - Windows with **PowerShell 7+** (`pwsh`) — recommended — or Windows PowerShell 5.1.
-- `git` on `PATH` (for the `repo@branch` cell).
+- `git` — to clone the repo, and for the live `repo@branch` cell.
 - Claude Code.
 
 ## Credit
