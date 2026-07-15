@@ -52,49 +52,82 @@ $settingsPath = Join-Path $DST "settings.json"
 if (Test-Path $settingsPath) { Copy-Item -Force $settingsPath "$settingsPath.bak" }
 ```
 
-Then merge programmatically (this preserves every existing key, sets
-`statusLine`, and **appends** these hooks to any hook arrays already present
-rather than replacing them):
+Then merge with the script below. It preserves every existing key, sets
+`statusLine`, and **appends** our hook entries to any hook arrays already present
+without disturbing the user's own hooks. It is **idempotent** — safe to re-run,
+it won't add duplicates — and it picks the right PowerShell (`pwsh` if present,
+else Windows PowerShell 5.1) and writes **absolute, quoted** script paths so it
+works regardless of `~` expansion or spaces in the username.
 
 ```powershell
-$example = Get-Content (Join-Path $SRC "settings.example.json") -Raw | ConvertFrom-Json
-if (Test-Path $settingsPath) {
-    $cur = Get-Content $settingsPath -Raw | ConvertFrom-Json
-} else {
-    $cur = [pscustomobject]@{}
+# Use PowerShell 7 if present, else Windows PowerShell 5.1.
+$psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
+
+# Absolute, quoted launch command for a script under $DST.
+function Launch([string]$rel) {
+    $full = Join-Path $DST $rel
+    return "$psExe -NoProfile -ExecutionPolicy Bypass -File `"$full`""
 }
 
-# Convert to a mutable hashtable tree so we can merge cleanly.
+# The entries this installer adds, keyed by hook event.
+$add = [ordered]@{
+    Stop = @(
+        [ordered]@{ hooks = @( [ordered]@{ type = 'command'; command = (Launch 'hooks\stop-classify-awaiting.ps1') } ) }
+    )
+    UserPromptSubmit = @(
+        [ordered]@{ hooks = @(
+            [ordered]@{ type = 'command'; command = (Launch 'hooks\user-prompt-clear-awaiting.ps1') },
+            [ordered]@{ type = 'command'; command = (Launch 'hooks\user-prompt-toggle-clock.ps1') }
+        ) }
+    )
+    UserPromptExpansion = @(
+        [ordered]@{ matcher = 'deets'; hooks = @( [ordered]@{ type = 'command'; command = (Launch 'hooks\user-prompt-toggle-deets.ps1') } ) }
+    )
+}
+
+# Load current settings as a mutable, ARRAY-PRESERVING hashtable tree. The `,`
+# operators are load-bearing: without them PowerShell unwraps single-element
+# arrays on return and the produced JSON would collapse `"hooks": [ {...} ]`
+# into `"hooks": {...}`, which Claude Code cannot parse.
 function To-Hash($o) {
     if ($o -is [System.Management.Automation.PSCustomObject]) {
-        $h = @{}; foreach ($p in $o.PSObject.Properties) { $h[$p.Name] = To-Hash $p.Value }; return $h
+        $h = [ordered]@{}; foreach ($p in $o.PSObject.Properties) { $h[$p.Name] = To-Hash $p.Value }; return $h
     } elseif ($o -is [System.Collections.IEnumerable] -and $o -isnot [string]) {
-        return @($o | ForEach-Object { To-Hash $_ })
+        $a = @(); foreach ($i in $o) { $a += ,(To-Hash $i) }; return ,$a
     } else { return $o }
 }
-$curH = To-Hash $cur
-$exH  = To-Hash $example
+$curH = if (Test-Path $settingsPath) { To-Hash (Get-Content $settingsPath -Raw | ConvertFrom-Json) } else { [ordered]@{} }
 
-# statusLine: set/replace outright (this is the whole point of the install).
-$curH['statusLine'] = $exH['statusLine']
+# statusLine: set outright (the whole point of the install).
+$curH['statusLine'] = [ordered]@{ type = 'command'; command = (Launch 'statusline.ps1') }
 
-# hooks: append our entries to existing event arrays, don't overwrite.
-if (-not $curH.ContainsKey('hooks')) { $curH['hooks'] = @{} }
-foreach ($evt in $exH['hooks'].Keys) {
-    if (-not $curH['hooks'].ContainsKey($evt)) { $curH['hooks'][$evt] = @() }
-    $curH['hooks'][$evt] = @($curH['hooks'][$evt]) + @($exH['hooks'][$evt])
+# hooks: append our entries idempotently — skip any whose command is already present.
+if (-not $curH.Contains('hooks')) { $curH['hooks'] = [ordered]@{} }
+$present = New-Object System.Collections.Generic.HashSet[string]
+foreach ($evt in @($curH['hooks'].Keys)) {
+    foreach ($entry in @($curH['hooks'][$evt])) {
+        foreach ($hk in @($entry['hooks'])) { if ($hk -and $hk['command']) { [void]$present.Add([string]$hk['command']) } }
+    }
+}
+foreach ($evt in $add.Keys) {
+    if (-not $curH['hooks'].Contains($evt)) { $curH['hooks'][$evt] = @() }
+    $new = @()
+    foreach ($entry in $add[$evt]) {
+        $cmds = @($entry['hooks'] | ForEach-Object { [string]$_['command'] })
+        $allPresent = $true
+        foreach ($c in $cmds) { if (-not $present.Contains($c)) { $allPresent = $false } }
+        if (-not $allPresent) { $new += ,$entry }
+    }
+    $curH['hooks'][$evt] = @($curH['hooks'][$evt]) + $new
 }
 
 ($curH | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $settingsPath -Encoding utf8
 ```
 
-If the user had **no** prior settings.json, you may instead just copy
-`settings.example.json` to `~/.claude/settings.json`. Only do that when the file
-did not already exist.
-
-> If you re-run this guide later, the append step would add the hooks a second
-> time. Before merging, check whether an entry whose command contains
-> `statusline.ps1`/the hook filenames is already present, and skip it if so.
+After writing, **re-read `settings.json` and confirm** each hook event is an
+array of objects and each entry's inner `hooks` is itself an array (`[ { "type":
+"command", ... } ]`) — not a bare object. If anything looks collapsed, restore
+`settings.json.bak` and stop.
 
 ## 3. Verify (do not skip — show the user the evidence)
 

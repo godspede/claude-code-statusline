@@ -30,8 +30,13 @@ foreach ($line in (Get-Content -LiteralPath $transcript)) {
     if ($o.type -ne 'assistant') { continue }
     $content = $o.message.content
     if (-not $content) { continue }
-    $texts = @($content | Where-Object { $_.type -eq 'text' } | ForEach-Object { $_.text })
-    $joined = ($texts -join "`n")
+    if ($content -is [string]) {
+        # Some transcript shapes store content as a plain string, not blocks.
+        $joined = $content
+    } else {
+        $texts = @($content | Where-Object { $_.type -eq 'text' } | ForEach-Object { $_.text })
+        $joined = ($texts -join "`n")
+    }
     if ($joined.Trim().Length -gt 0) { $lastText = $joined }
 }
 if (-not $lastText) { Remove-Item -LiteralPath $sentinel -Force -ErrorAction SilentlyContinue; exit 0 }

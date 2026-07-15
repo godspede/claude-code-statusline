@@ -1,5 +1,8 @@
 # claude-code-statusline
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Platform: Windows / PowerShell](https://img.shields.io/badge/platform-Windows%20%7C%20PowerShell-5391FE.svg)
+
 A rich, self-contained statusline for [Claude Code](https://claude.com/claude-code)
 on **Windows / PowerShell**. One line by default; `/deets` flips a verbose
 two-line layout.
@@ -52,4 +55,10 @@ into `~/.claude/settings.json`.
 
 ## Credit
 
-Based on [daniel3303/ClaudeCodeStatusLine](https://github.com/daniel3303/ClaudeCodeStatusLine).
+Based on [daniel3303/ClaudeCodeStatusLine](https://github.com/daniel3303/ClaudeCodeStatusLine)
+by Daniel Oliveira.
+
+## License
+
+[MIT](LICENSE). Original work © 2025 Daniel Oliveira; this Windows/PowerShell
+derivative © 2026 godspede.
