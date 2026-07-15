@@ -25,8 +25,8 @@ two-line layout.
 The line **elastically fits** your terminal width — as the window narrows,
 cells drop in priority order: second clock → effort → diff stats → branch →
 repo → model name. The `●` bullet and the `@HH:mm` received-time never drop, and
-one rate-limit clock is always shown (the toggled one, so 5h/7d alternate when
-both can't fit).
+one rate-limit clock is always shown — when both can't fit, the visible one
+alternates between 5h and 7d on each redraw.
 
 ## No external dependencies
 
@@ -37,7 +37,7 @@ the extra-usage credit segment; the 5h/7d clocks come straight from the stdin
 data with no auth. Everything else is local.
 
 The companion **hooks** (in `hooks/`) power the interactive bits — the awaiting
-badge, the `/deets` toggle, the clock toggle. They are tiny PowerShell scripts
+badge and the `/deets` toggle. They are tiny PowerShell scripts
 that only read the hook JSON Claude Code hands them and touch flag files under
 `~/.claude/state`. No LLM calls, no services, no daemons, no jq. You can install
 the statusline alone and skip the hooks; you just lose those interactive states
