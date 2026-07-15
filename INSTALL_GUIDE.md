@@ -76,8 +76,7 @@ $add = [ordered]@{
     )
     UserPromptSubmit = @(
         [ordered]@{ hooks = @(
-            [ordered]@{ type = 'command'; command = (Launch 'hooks\user-prompt-clear-awaiting.ps1') },
-            [ordered]@{ type = 'command'; command = (Launch 'hooks\user-prompt-toggle-clock.ps1') }
+            [ordered]@{ type = 'command'; command = (Launch 'hooks\user-prompt-clear-awaiting.ps1') }
         ) }
     )
     UserPromptExpansion = @(
@@ -151,8 +150,8 @@ foreach ($h in Get-ChildItem (Join-Path $DST "hooks\*.ps1")) {
 }
 ```
 
-Expect `exit 0` for clear-awaiting and toggle-clock, `exit 0` for
-stop-classify (no transcript) and toggle-deets (prompt isn't `/deets`).
+Expect `exit 0` for clear-awaiting, stop-classify (no transcript), and
+toggle-deets (prompt isn't `/deets`).
 
 **c. `/deets` toggles.** After restarting Claude Code, typing `/deets` should
 print `deets mode ON`/`OFF` and switch the statusline between one and two lines.
@@ -171,8 +170,9 @@ fresh `claude` session; the statusline appears at the bottom.
 | `statusline.ps1` | the statusline itself | (required) |
 | `hooks/stop-classify-awaiting.ps1` | yellow **awaiting** badge when Claude asks a question | the awaiting state |
 | `hooks/user-prompt-clear-awaiting.ps1` | clears awaiting when you reply | (pairs with the above) |
-| `hooks/user-prompt-toggle-clock.ps1` | flips 5h↔7d each turn | alternating clocks (default stays 5h) |
 | `hooks/user-prompt-toggle-deets.ps1` + `commands/deets.md` | the `/deets` two-line toggle | the `/deets` command |
+
+(The 5h/7d clocks alternate automatically when both can't fit — no hook needed.)
 
 To uninstall: restore `settings.json.bak`, and delete the files above. Nothing
 else on the system is touched.

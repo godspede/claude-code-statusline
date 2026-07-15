@@ -476,12 +476,6 @@ if ($usageData) {
     try { $parsedUsage = if ($usageData -is [string]) { $usageData | ConvertFrom-Json } else { $usageData } } catch {}
 }
 
-# === clock toggle ===
-# user-prompt-toggle-clock.ps1 flips a per-session sentinel: present = 7d, absent = 5h.
-$clockChoice = "5h"
-if ($sidIn -and (Test-Path (Join-Path $stateDir "clock-toggle-$sidIn.flag"))) { $clockChoice = "7d" }
-# === /clock toggle ===
-
 # Build both clock segments as DATA (full coloured strings, leading separator).
 $segment5h = ""
 $segment7d = ""
@@ -511,11 +505,9 @@ if ($effectiveBuiltin) {
 $ph5 = "${sep}${white}5h${reset} ${dim}-${reset}"
 $ph7 = "${sep}${white}7d${reset} ${dim}-${reset}"
 
-# Normal mode: the toggle picks the PRIMARY clock (always shown); the other is
-# the SECOND clock, filled by the elastic-fit pass only if there's room. Because
-# user-prompt-toggle-clock flips the toggle each turn, the single clock that
-# shows when both can't fit alternates 5h/7d as you work. Both are placeholders
-# here; the fit resolves them.
+# Normal mode: both clocks are shown when they fit (5h then 7d). When only one
+# fits, the fit pass alternates which one is shown on each redraw (see below).
+# Both are placeholders here; the fit resolves them.
 if (-not $deetsMode) {
     $out += "___SL_PRIMARY_CLOCK___"
     $out += "___SL_SECOND_CLOCK___"
@@ -563,14 +555,23 @@ $plain = $plain -replace "___SL_REPO_CELL_BEGIN___.*?___SL_REPO_CELL_END___", ""
 foreach ($m in @("___SL_PRIMARY_CLOCK___", "___SL_SECOND_CLOCK___")) { $plain = $plain.Replace($m, "") }
 $budget = $TARGET_WIDTH - $plain.Length
 
-# Primary clock (always shown, per the toggle) is reserved first.
-$primaryClock = ""; $secondClock = ""; $secondCand = ""
+# One rate-limit clock is always shown; reserve the wider of the two so the
+# redraw-alternation below can pick either without overflowing.
+$primaryClock = ""; $secondClock = ""
+$c5 = $null; $c7 = $null; $w5 = 0; $w7 = 0; $bothData = $false
 if (-not $deetsMode) {
-    $c5 = if ($segment5h) { $segment5h } else { $ph5 }
-    $c7 = if ($segment7d) { $segment7d } else { $ph7 }
-    if ($clockChoice -eq "7d") { $primaryClock = $c7; $secondCand = $c5 }
-    else                       { $primaryClock = $c5; $secondCand = $c7 }
-    $budget -= Get-VisibleWidth $primaryClock
+    $has5 = [bool]$segment5h; $has7 = [bool]$segment7d
+    $c5 = if ($has5) { $segment5h } else { $ph5 }
+    $c7 = if ($has7) { $segment7d } else { $ph7 }
+    $w5 = Get-VisibleWidth $c5; $w7 = Get-VisibleWidth $c7
+    $bothData = ($has5 -and $has7)
+    if ($bothData) {
+        $budget -= [math]::Max($w5, $w7)
+    } elseif ($has7) {
+        $primaryClock = $c7; $budget -= $w7
+    } else {
+        $primaryClock = $c5; $budget -= $w5   # 5h data, or both-dashes fallback
+    }
 }
 
 # Optionals, highest priority kept first.
@@ -600,10 +601,24 @@ if ($keepRepo -and $gitStat -and (($gitStat.Length + 3) -le $budget)) {
 }
 # 5. effort chip
 if ($effortW -le $budget) { $keepEffort = $true; $budget -= $effortW }
-# 6. second clock (both shown only if it still fits)
-if (-not $deetsMode -and $secondCand) {
-    $sw = Get-VisibleWidth $secondCand
-    if ($sw -le $budget) { $secondClock = $secondCand; $budget -= $sw }
+# 6. second clock. If both clocks have data and the narrower one still fits,
+# show both (5h then 7d). If it doesn't fit, show a SINGLE clock that ALTERNATES
+# on every redraw: read the last-shown side from a per-session flag, show the
+# other, and persist it. No hook, no timer — the redraw itself is the trigger.
+if (-not $deetsMode -and $bothData) {
+    if ([math]::Min($w5, $w7) -le $budget) {
+        $primaryClock = $c5; $secondClock = $c7; $budget -= [math]::Min($w5, $w7)
+    } else {
+        $altFile = if ($sidIn) { Join-Path $stateDir "clock-alt-$sidIn.flag" } else { Join-Path $stateDir "clock-alt.flag" }
+        $prevShown = ""
+        if (Test-Path $altFile) { try { $prevShown = (Get-Content $altFile -Raw -ErrorAction SilentlyContinue).Trim() } catch {} }
+        if ($prevShown -eq "5h") { $primaryClock = $c7; $nowShown = "7d" }
+        else                     { $primaryClock = $c5; $nowShown = "5h" }
+        try {
+            if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory -Path $stateDir -Force | Out-Null }
+            Set-Content -LiteralPath $altFile -Value $nowShown -Force
+        } catch {}
+    }
 }
 
 # Build the repo fill from what survived.

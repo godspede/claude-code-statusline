@@ -14,8 +14,7 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ~/.claude/hooks/user-prompt-clear-awaiting.ps1" },
-          { "type": "command", "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ~/.claude/hooks/user-prompt-toggle-clock.ps1" }
+          { "type": "command", "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File ~/.claude/hooks/user-prompt-clear-awaiting.ps1" }
         ]
       }
     ],
