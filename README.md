@@ -22,8 +22,11 @@ two-line layout.
 - **5h / 7d rate-limit clocks** with reset times. `/deets` toggles a two-line
   layout showing both clocks plus the model.
 
-The line **elastically fits** your terminal width — cells drop in priority
-order as the window narrows, and the `●` bullet always survives.
+The line **elastically fits** your terminal width — as the window narrows,
+cells drop in priority order: second clock → effort → diff stats → branch →
+repo → model name. The `●` bullet and the `@HH:mm` received-time never drop, and
+one rate-limit clock is always shown (the toggled one, so 5h/7d alternate when
+both can't fit).
 
 ## No external dependencies
 

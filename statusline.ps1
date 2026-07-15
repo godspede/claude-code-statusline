@@ -252,24 +252,22 @@ if ($sidIn) {
     # leads line 2, so line 1 keeps the state word.
     $bLabel = if ($deetsMode) { $bWord } else { $modelName }
     $out += "${bColor}●${reset}"
-    $out += "___SL_BADGE_TXT_BEGIN___${bColor} ${bLabel}${reset}"
+    $out += "___SL_BADGE_TXT_BEGIN___${bColor} ${bLabel}${reset}___SL_BADGE_TXT_END___"
     $badgeTextW = 1 + $bLabel.Length
-    # recv `@HH:mm` right after the label, inside the strip region.
+    # recv `@HH:mm` — ALWAYS shown: it sits OUTSIDE the strip sentinels, right
+    # after the badge text, so dropping the model name still leaves `● @HH:mm`.
     if ($recvDisp) {
         $out += " ${dim}@${recvDisp}${reset}"
-        $badgeTextW += 2 + $recvDisp.Length
     }
-    $out += "___SL_BADGE_TXT_END___"
 }
 
-# Effort fill-gauge chip — `<glyph> <level>`, grouped with the badge as the
-# leading "session mode" cluster (state + effort). Always shown; sits outside
-# the badge-text strip sentinels so it survives when the state word is dropped
-# on narrow terminals (the bullet's colour still conveys state). Rendered in
-# both normal and /deets mode — line 1 carries the badge in both. Purple is
-# unused elsewhere, so it reads cleanly as "the effort colour". The glyph is a
-# single BMP char, so the elastic-fit $plain.Length count needs no fudge.
-$out += " ${purple}$effortGlyph ${effortLevel}${reset}"
+# Effort fill-gauge chip — `<glyph> <level>`. Wrapped in strip sentinels so the
+# elastic-fit pass can drop it EARLY (right after the second clock) and always
+# BEFORE the model name — effort is lower-value than knowing the model / repo.
+# The bullet's colour still conveys session state once the chip is gone. Purple
+# reads as "the effort colour". The glyph is a single BMP char (width 1).
+$out += "___SL_EFFORT_BEGIN___ ${purple}$effortGlyph ${effortLevel}${reset}___SL_EFFORT_END___"
+$effortW = 3 + $effortLevel.Length   # " " + glyph(1) + " " + level
 
 # --- Repo cell (data only; rendering deferred to the elastic-fit pass) ---
 $cwd = $data.cwd
@@ -513,20 +511,14 @@ if ($effectiveBuiltin) {
 $ph5 = "${sep}${white}5h${reset} ${dim}-${reset}"
 $ph7 = "${sep}${white}7d${reset} ${dim}-${reset}"
 
-# Normal mode: fixed slot order (5h before 7d). Toggle picks the primary
-# (always rendered, data-or-placeholder); the other becomes the second-clock
-# marker, filled by the elastic-fit pass only if there's room (data-only).
-$secondClock = ""
+# Normal mode: the toggle picks the PRIMARY clock (always shown); the other is
+# the SECOND clock, filled by the elastic-fit pass only if there's room. Because
+# user-prompt-toggle-clock flips the toggle each turn, the single clock that
+# shows when both can't fit alternates 5h/7d as you work. Both are placeholders
+# here; the fit resolves them.
 if (-not $deetsMode) {
-    if ($clockChoice -eq "5h") {
-        $out += if ($segment5h) { $segment5h } else { $ph5 }
-        $out += "___SL_SECOND_CLOCK___"
-        $secondClock = $segment7d
-    } else {
-        $out += "___SL_SECOND_CLOCK___"
-        $out += if ($segment7d) { $segment7d } else { $ph7 }
-        $secondClock = $segment5h
-    }
+    $out += "___SL_PRIMARY_CLOCK___"
+    $out += "___SL_SECOND_CLOCK___"
     $out += Format-ExtraUsage $parsedUsage
 }
 
@@ -554,102 +546,91 @@ if ($effectiveBuiltin) {
 # ===== Update check disabled locally =====
 $updateLine = ""
 
-# === repo@branch elastic fit ===
-# Substitute ___SL_REPO_FILL___ with a repo segment sized so the whole
-# line lands within TARGET_WIDTH. Decision tree, highest preference first —
-# the second clock outranks the (+N -M) change-stats indicator.
-$stripBadge = $false
-$stripCell = $false
-if ($out -like "*___SL_REPO_FILL___*") {
-    $plain = $out -replace "$esc\[[0-9;]*m", ""
-    foreach ($m in @("___SL_REPO_FILL___", "___SL_SECOND_CLOCK___",
-                     "___SL_BADGE_TXT_BEGIN___", "___SL_BADGE_TXT_END___",
-                     "___SL_REPO_CELL_BEGIN___", "___SL_REPO_CELL_END___")) {
-        $plain = $plain.Replace($m, "")
-    }
-    $othersW = $plain.Length
-    $elasticAvail = $TARGET_WIDTH - $othersW
+# === elastic fit ===
+# Assemble line 1 within TARGET_WIDTH by including optional cells in strict
+# priority. ALWAYS shown: the `●` bullet, `@recv`, tokens, and ONE rate-limit
+# clock (the toggled primary). Keep-priority, highest first:
+#   model  >  repo dir  >  branch  >  (+N -M) stats  >  effort  >  second clock
+# so the DROP order (first to vanish) is: second clock -> effort -> stats ->
+# branch -> repo dir -> model. `@recv` is never in this list, so it never drops.
 
-    $repoPlain = $displayDir
-    if ($gitBranch) { $repoPlain = "$displayDir@$gitBranch" }
-    $statsPlain = ""
-    if ($gitStat) { $statsPlain = " ($gitStat)" }
-    $repoW = $repoPlain.Length
-    $statsW = $statsPlain.Length
+# Fixed remainder: strip ANSI, then remove every ELASTIC span/marker so only the
+# always-shown parts (bullet, @recv, tokens, extra-usage) are counted.
+$plain = $out -replace "$esc\[[0-9;]*m", ""
+$plain = $plain -replace "___SL_BADGE_TXT_BEGIN___.*?___SL_BADGE_TXT_END___", ""
+$plain = $plain -replace "___SL_EFFORT_BEGIN___.*?___SL_EFFORT_END___", ""
+$plain = $plain -replace "___SL_REPO_CELL_BEGIN___.*?___SL_REPO_CELL_END___", ""
+foreach ($m in @("___SL_PRIMARY_CLOCK___", "___SL_SECOND_CLOCK___")) { $plain = $plain.Replace($m, "") }
+$budget = $TARGET_WIDTH - $plain.Length
 
-    $secondW = 0
-    if ($secondClock) { $secondW = Get-VisibleWidth $secondClock }
+# Primary clock (always shown, per the toggle) is reserved first.
+$primaryClock = ""; $secondClock = ""; $secondCand = ""
+if (-not $deetsMode) {
+    $c5 = if ($segment5h) { $segment5h } else { $ph5 }
+    $c7 = if ($segment7d) { $segment7d } else { $ph7 }
+    if ($clockChoice -eq "7d") { $primaryClock = $c7; $secondCand = $c5 }
+    else                       { $primaryClock = $c5; $secondCand = $c7 }
+    $budget -= Get-VisibleWidth $primaryClock
+}
 
-    # Helpers to assemble the coloured repo / stats fragments.
-    $repoFill = {
-        $f = "${cyan}${displayDir}${reset}"
-        if ($gitBranch) { $f += "${dim}@${reset}${green}${gitBranch}${reset}" }
-        return $f
-    }
-    $statsFill = {
-        if (-not $gitStat) { return "" }
-        $parts = $gitStat -split ' '
-        return " ${dim}(${reset}${green}$($parts[0])${reset} ${red}$($parts[1])${reset}${dim})${reset}"
-    }
+# Optionals, highest priority kept first.
+$keepModel = $false; $keepEffort = $false
+$keepRepo = $false; $keepBranch = $false; $branchFit = $null; $keepStats = $false
+$haveRepo = ($out -like "*___SL_REPO_FILL___*")
 
-    $fill = ""
-    $scFill = ""
-    if (($repoW + $statsW + $secondW) -le $elasticAvail) {
-        $fill = (& $repoFill) + (& $statsFill)
-        $scFill = $secondClock
-    } elseif ((($repoW + $secondW) -le $elasticAvail) -and $secondClock) {
-        $fill = (& $repoFill)
-        $scFill = $secondClock
-    } elseif (($repoW + $statsW) -le $elasticAvail) {
-        $fill = (& $repoFill) + (& $statsFill)
-    } elseif ($repoW -le $elasticAvail) {
-        $fill = (& $repoFill)
-    } elseif ($gitBranch -and (($displayDir.Length + 5) -le $elasticAvail)) {
-        # Worktree-name shrink: require ≥3 branch chars (displayDir + @ + 3 + …
-        # = displayDir + 5). Anything tighter renders an empty/1-char branch
-        # stub (`myrepo@…`, `myrepo@f…`) — better to drop the cell entirely.
-        $bAvail = $elasticAvail - $displayDir.Length - 2
-        $b = $gitBranch.Substring(0, [math]::Min($bAvail, $gitBranch.Length))
-        $fill = "${cyan}${displayDir}${reset}${dim}@${reset}${green}${b}${reset}${dim}…${reset}"
-    } else {
-        # Reclaim the badge-text budget and re-run the fit from there.
-        $stripBadge = $true
-        $avail2 = $elasticAvail + $badgeTextW
-        if ($repoW -le $avail2) {
-            $fill = (& $repoFill)
-        } elseif ($gitBranch -and (($displayDir.Length + 5) -le $avail2)) {
-            # Same min-3-branch-chars guard as above.
-            $bAvail = $avail2 - $displayDir.Length - 2
-            $b = $gitBranch.Substring(0, [math]::Min($bAvail, $gitBranch.Length))
-            $fill = "${cyan}${displayDir}${reset}${dim}@${reset}${green}${b}${reset}${dim}…${reset}"
-        } else {
-            # Shrinking + field-removal can't fit a meaningful cell — drop
-            # the whole ` | <repo>` cell. The freed width keeps the line
-            # from wrapping under the RC overlay (and the bypass-permissions
-            # banner CC paints alongside it).
-            $stripCell = $true
-            $fill = ""
+# 1. model name
+if ($badgeTextW -le $budget) { $keepModel = $true; $budget -= $badgeTextW }
+# 2. repo dir  (3. branch, shrinkable)
+if ($haveRepo -and (($displayDir.Length + 3) -le $budget)) {   # " | " + dir
+    $keepRepo = $true; $budget -= ($displayDir.Length + 3)
+    if ($gitBranch) {
+        if ((1 + $gitBranch.Length) -le $budget) {
+            $keepBranch = $true; $budget -= (1 + $gitBranch.Length)   # "@branch"
+        } elseif (($budget - 2) -ge 3) {
+            # "@" + >=3 chars + "…"
+            $take = [math]::Min($budget - 2, $gitBranch.Length)
+            $branchFit = $gitBranch.Substring(0, $take)
+            $keepBranch = $true; $budget -= (2 + $branchFit.Length)
         }
     }
-
-    $out = $out.Replace("___SL_REPO_FILL___", $fill)
-    $out = $out.Replace("___SL_SECOND_CLOCK___", $scFill)
+}
+# 4. (+N -M) stats
+if ($keepRepo -and $gitStat -and (($gitStat.Length + 3) -le $budget)) {
+    $keepStats = $true; $budget -= ($gitStat.Length + 3)   # " (" + stat + ")"
+}
+# 5. effort chip
+if ($effortW -le $budget) { $keepEffort = $true; $budget -= $effortW }
+# 6. second clock (both shown only if it still fits)
+if (-not $deetsMode -and $secondCand) {
+    $sw = Get-VisibleWidth $secondCand
+    if ($sw -le $budget) { $secondClock = $secondCand; $budget -= $sw }
 }
 
-# Resolve the repo-cell sentinels (drop the whole ` | <repo>` span if flagged).
-if ($stripCell) {
-    $out = $out -replace "___SL_REPO_CELL_BEGIN___.*?___SL_REPO_CELL_END___", ""
-} else {
-    $out = $out.Replace("___SL_REPO_CELL_BEGIN___", "").Replace("___SL_REPO_CELL_END___", "")
+# Build the repo fill from what survived.
+$fill = ""
+if ($haveRepo -and $keepRepo) {
+    $fill = "${cyan}${displayDir}${reset}"
+    if ($keepBranch) {
+        if ($branchFit) { $fill += "${dim}@${reset}${green}${branchFit}${reset}${dim}…${reset}" }
+        else            { $fill += "${dim}@${reset}${green}${gitBranch}${reset}" }
+    }
+    if ($keepStats) {
+        $parts = $gitStat -split ' '
+        $fill += " ${dim}(${reset}${green}$($parts[0])${reset} ${red}$($parts[1])${reset}${dim})${reset}"
+    }
 }
 
-# Resolve the badge-text sentinels (excise the wrapped text if flagged, leaving ●).
-if ($stripBadge) {
-    $out = $out -replace "___SL_BADGE_TXT_BEGIN___.*?___SL_BADGE_TXT_END___", ""
-} else {
-    $out = $out.Replace("___SL_BADGE_TXT_BEGIN___", "").Replace("___SL_BADGE_TXT_END___", "")
-}
-# === /repo@branch elastic fit ===
+# Resolve every sentinel.
+$out = $out.Replace("___SL_PRIMARY_CLOCK___", $primaryClock)
+$out = $out.Replace("___SL_SECOND_CLOCK___", $secondClock)
+$out = $out.Replace("___SL_REPO_FILL___", $fill)
+if ($haveRepo -and -not $keepRepo) { $out = $out -replace "___SL_REPO_CELL_BEGIN___.*?___SL_REPO_CELL_END___", "" }
+else { $out = $out.Replace("___SL_REPO_CELL_BEGIN___", "").Replace("___SL_REPO_CELL_END___", "") }
+if (-not $keepEffort) { $out = $out -replace "___SL_EFFORT_BEGIN___.*?___SL_EFFORT_END___", "" }
+else { $out = $out.Replace("___SL_EFFORT_BEGIN___", "").Replace("___SL_EFFORT_END___", "") }
+if (-not $keepModel) { $out = $out -replace "___SL_BADGE_TXT_BEGIN___.*?___SL_BADGE_TXT_END___", "" }
+else { $out = $out.Replace("___SL_BADGE_TXT_BEGIN___", "").Replace("___SL_BADGE_TXT_END___", "") }
+# === /elastic fit ===
 
 # === /deets line 2 ===
 # Verbose second line: model | tokens | 5h NN% [@reset] | 7d NN% [@reset].
