@@ -11,23 +11,35 @@ Work carefully: the only step that can disrupt the user is editing their
 
 ## 0. Preconditions (check, don't assume)
 
-Run these and confirm before proceeding:
+**This guide copies files FROM the current directory, so you must be inside the
+cloned repo.** If you don't have it yet, clone it and `cd` in:
 
 ```powershell
-pwsh --version                 # PowerShell 7+ preferred; 5.1 works too
-git --version                  # needed for the repo@branch cell
-$env:USERPROFILE               # confirm the home dir; ~/.claude lives here
+git clone https://github.com/godspede/claude-code-statusline
+cd claude-code-statusline
 ```
 
-If `pwsh` is missing, either install PowerShell 7 (`winget install Microsoft.PowerShell`)
-or, in the commands below, replace `pwsh` with `powershell` (Windows PowerShell 5.1).
-
-This repo (the one containing this file) is the **source**. Note its path; the
-steps below call it `$SRC`. Set it once:
+Confirm you are at the repo root (this MUST print `True`) and that the tools are
+present:
 
 ```powershell
-$SRC = (Get-Location).Path      # run this from the repo root
-$DST = Join-Path $env:USERPROFILE ".claude"
+Test-Path .\statusline.ps1     # MUST be True — you are in the repo root
+git --version                  # required (to clone, and for the repo@branch cell)
+$env:USERPROFILE               # confirm the home dir
+```
+
+If `Test-Path` is `False`, stop and `cd` into the cloned `claude-code-statusline`
+folder first. PowerShell 7 (`pwsh`) is recommended (`winget install Microsoft.PowerShell`);
+the line below falls back to Windows PowerShell 5.1 automatically.
+
+Set the launcher, the source (this repo), and the destination (the user's Claude
+config dir — honor `CLAUDE_CONFIG_DIR` if set, else `~/.claude`). Everything below
+uses these:
+
+```powershell
+$psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
+$SRC = (Get-Location).Path
+$DST = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE ".claude" }
 ```
 
 ## 1. Copy the files into ~/.claude
@@ -134,7 +146,7 @@ array of objects and each entry's inner `hooks` is itself an array (`[ { "type":
 coloured line back (not an error):
 
 ```powershell
-'{"model":{"display_name":"Opus 4.8"},"context_window":{"context_window_size":200000,"current_usage":{"input_tokens":40000,"cache_read_input_tokens":88000}},"rate_limits":{"five_hour":{"used_percentage":34,"resets_at":1893456000},"seven_day":{"used_percentage":12,"resets_at":1893456000}},"session_id":"test-123","cwd":"' + ($env:USERPROFILE -replace '\\','\\') + '","workspace":{}}' | pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $DST "statusline.ps1")
+'{"model":{"display_name":"Opus 4.8"},"context_window":{"context_window_size":200000,"current_usage":{"input_tokens":40000,"cache_read_input_tokens":88000}},"rate_limits":{"five_hour":{"used_percentage":34,"resets_at":1893456000},"seven_day":{"used_percentage":12,"resets_at":1893456000}},"session_id":"test-123","cwd":"' + ($env:USERPROFILE -replace '\\','\\') + '","workspace":{}}' | & $psExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $DST "statusline.ps1")
 ```
 
 Expect one line beginning with a `●` bullet, the model name, an effort glyph, a
@@ -145,7 +157,7 @@ escapes in a raw capture — that's correct; they render as colour in the real U
 
 ```powershell
 foreach ($h in Get-ChildItem (Join-Path $DST "hooks\*.ps1")) {
-    '{"session_id":"test-123","prompt":"hello"}' | pwsh -NoProfile -ExecutionPolicy Bypass -File $h.FullName
+    '{"session_id":"test-123","prompt":"hello"}' | & $psExe -NoProfile -ExecutionPolicy Bypass -File $h.FullName
     Write-Host "$($h.Name): exit $LASTEXITCODE"
 }
 ```
